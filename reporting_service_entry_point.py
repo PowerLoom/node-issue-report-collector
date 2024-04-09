@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import json
 import time
 import uuid
@@ -235,15 +236,56 @@ async def ping(
         return JSONResponse(status_code=400, content={'message': 'Invalid instanceID.'})
 
     # add/update instanceID to zset with current time as ping time
+
+    time = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+
     await request.app.state.writer_redis_pool.zadd(
         name=get_snapshotters_status_zset(),
-        mapping={req_parsed.instanceID: int(time.time())},
+        mapping={req_parsed.instanceID + ':' + str(req_parsed.slotId): time},
+        
+    )
+    await request.app.state.writer_redis_pool.set(
+        'lastPing:' + req_parsed.instanceID + ':' + str(req_parsed.slotId), time
     )
 
     return JSONResponse(
         status_code=200,
         content={'message': 'Ping Successful!'},
     )
+    
+
+@app.get('/lastPing/{address}/{slot_id}')
+async def get_last_ping(
+    request: Request,
+    address: str,
+    slot_id: int,
+    response: Response,
+    rate_limit_auth_dep: RateLimitAuthCheck = Depends(
+        rate_limit_auth_check,
+        ),
+    ):
+    if not (
+        rate_limit_auth_dep.rate_limit_passed and
+        rate_limit_auth_dep.authorized and
+        rate_limit_auth_dep.owner.active == UserStatusEnum.active
+    ):
+        return inject_rate_limit_fail_response(rate_limit_auth_dep)
+    
+    try:
+        address = Web3.to_checksum_address(address)
+    except ValueError:
+        return JSONResponse(status_code=400, content={'message': 'Invalid instanceID.'})
+    
+    key = 'lastPing:' + address + ':' + str(slot_id)
+    lastPing = await request.app.state.writer_redis_pool.get(
+        key
+    )
+    if lastPing is not None:
+        lastPing = int(lastPing.decode('utf-8'))
+    else:
+        lastPing = 0
+    return JSONResponse(status_code=200, content={'lastPing': lastPing})
+
 
 
 @app.post(
@@ -280,9 +322,10 @@ async def get_snapshotters_status_post(
 
     snapshotters_status = []
     for snapshotter, ping_time in active_snapshotters:
+        snapshotter_info = snapshotter.decode().split(':')
         snapshotters_status.append(
             SnapshotterPingResponse(
-                instanceID=snapshotter.decode(), timeOfReporting=int(ping_time),
+                instanceID=snapshotter_info[0], slotId=int(snapshotter_info[1]), timeOfReporting=int(ping_time),
             ),
         )
     return snapshotters_status

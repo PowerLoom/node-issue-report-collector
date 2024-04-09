@@ -120,7 +120,7 @@ async def rate_limit_auth_check(
             passed, retry_after, violated_limit = await generic_rate_limiter(
                 parsed_limits=parse_many(auth_check_dep.owner.rate_limit),
                 key_bits=[
-                    auth_check_dep.api_key,
+                    auth_check_dep.owner.name,
                 ],
                 redis_conn=auth_redis_conn,
                 rate_limit_lua_script_shas=request.app.state.rate_limit_lua_script_shas,
