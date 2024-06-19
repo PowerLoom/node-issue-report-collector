@@ -16,6 +16,9 @@ from fastapi import Request
 from fastapi import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi_pagination import add_pagination
+from fastapi_pagination.links import Page
+from pydantic import Field
 from redis import asyncio as aioredis
 from web3 import Web3
 
@@ -35,6 +38,7 @@ from helpers.redis_keys import get_snapshotter_issues_reported_key
 from helpers.redis_keys import get_snapshotters_status_zset
 from settings.conf import settings
 from utils.default_logger import logger
+from utils.paginator import paginate_zset
 from utils.rate_limiter import load_rate_limiter_scripts
 from utils.redis_conn import RedisPool
 
@@ -63,6 +67,12 @@ def acquire_bounded_semaphore(fn):
     return wrapped
 
 
+def parse_snapshotter_issue(issue: str, snapshotter_id_masked: str) -> SnapshotterIssue:
+    issue_parsed = SnapshotterIssue(**json.loads(issue))
+    issue_parsed.instanceID = snapshotter_id_masked
+    return issue_parsed
+
+
 # setup CORS origins stuff
 origins = ['*']
 
@@ -70,6 +80,11 @@ redis_lock = redis.Redis()
 
 app = FastAPI()
 app.logger = service_logger
+
+Page = Page.with_custom_options(
+    size=Field(10, ge=1, le=30),
+)
+add_pagination(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -376,7 +391,7 @@ async def get_inactive_snapshotters_status_post(
 
 @app.post(
     '/metrics/issues/{time_window}',
-    response_model=List[SnapshotterIssue],
+    response_model=Page[SnapshotterIssue],
     responses={404: {'model': Message}},
 )
 async def get_snapshotter_issues_post(
@@ -387,7 +402,7 @@ async def get_snapshotter_issues_post(
     rate_limit_auth_dep: RateLimitAuthCheck = Depends(
         rate_limit_auth_check,
     ),
-):
+) -> Page[SnapshotterIssue]:
 
     """
     Get issues reported by a snapshotter in time window
@@ -404,21 +419,26 @@ async def get_snapshotter_issues_post(
     # create a masked version of snapshotter_id
     snapshotter_id_masked = snapshotter_id[:6] + '*********************' + snapshotter_id[-6:]
 
-    issues = await redis_conn.zrevrangebyscore(
-        name=get_snapshotter_issues_reported_key(
+    args = {
+        'name': get_snapshotter_issues_reported_key(
             snapshotter_id=snapshotter_id,
         ),
-        max=int(time.time()),
-        min=int(time.time()) - time_window,
-        withscores=False,
-    )
+        'max': int(time.time()),
+        'min': int(time.time()) - time_window,
+    }
 
-    issues_reports = []
-    for issue in issues:
-        issue_parsed = SnapshotterIssue(**json.loads(issue))
-        issue_parsed.instanceID = snapshotter_id_masked
-        issues_reports.append(issue_parsed)
-    return issues_reports
+    return await paginate_zset(
+        redis_conn=redis_conn,
+        func=redis_conn.zrevrangebyscore,
+        args=args,
+        logger=service_logger,
+        transformer=lambda items: [
+            parse_snapshotter_issue(
+                issue, 
+                snapshotter_id_masked=snapshotter_id_masked,
+            ) for issue in items
+        ],
+    )
 
 
 @app.post(
