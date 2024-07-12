@@ -18,5 +18,6 @@
 		"file_descriptors": 2048
 	},
 	"sequencer_url": "http://localhost:9988",
-	"sequencer_query_token": "token"
+	"sequencer_query_token": "token",
+	"ping_activity_threshold": 60
 }

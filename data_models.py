@@ -104,6 +104,7 @@ class SettingsConf(BaseModel):
     rlimit: RLimit
     sequencer_url: str
     sequencer_query_token: str
+    ping_activity_threshold: int  # in seconds
 
 
 

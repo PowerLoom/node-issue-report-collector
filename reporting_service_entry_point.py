@@ -311,7 +311,7 @@ async def return_activity_state(
     else:
         lastPing = 0
     time = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-    if time - lastPing > 60:
+    if time - lastPing > settings.ping_activity_threshold:
         intermediate_activity_status = False
     else:
         intermediate_activity_status = True
