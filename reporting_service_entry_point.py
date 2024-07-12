@@ -21,7 +21,7 @@ from fastapi_pagination.links import Page
 from pydantic import Field
 from redis import asyncio as aioredis
 from web3 import Web3
-
+from urllib.parse import urljoin
 from auth.utils.data_models import RateLimitAuthCheck
 from auth.utils.data_models import UserStatusEnum
 from auth.utils.helpers import inject_rate_limit_fail_response
@@ -317,7 +317,7 @@ async def return_activity_state(
         intermediate_activity_status = True
     # call the sequencer API to get the activity status
     total_rewards_response_obj = await request.app.state.httpx_client.post(
-        url=settings.sequencer_url,
+        url=urljoin(settings.sequencer_url, '/getTotalRewards'),
         json={
             'slot_id': slot_id,
             'token': settings.sequencer_query_token,
