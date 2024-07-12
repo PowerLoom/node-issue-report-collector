@@ -8,7 +8,7 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
-
+from httpx import AsyncClient, AsyncHTTPTransport, Limits, Timeout
 import redis
 from fastapi import Depends
 from fastapi import FastAPI
@@ -26,7 +26,7 @@ from auth.utils.data_models import RateLimitAuthCheck
 from auth.utils.data_models import UserStatusEnum
 from auth.utils.helpers import inject_rate_limit_fail_response
 from auth.utils.helpers import rate_limit_auth_check
-from data_models import AccountIdentifier
+from data_models import AccountIdentifier, SequencerTotalRewardsResponse
 from data_models import GenericTxnIssue
 from data_models import Message
 from data_models import SnapshotterIdentifier
@@ -134,6 +134,18 @@ async def startup_boilerplate():
     app.state.rate_limit_lua_script_shas = await load_rate_limiter_scripts(app.state.writer_redis_pool)
     app.state.auth = dict()
     app.state.snapshotter_aliases = dict()
+    app.state.async_transport = AsyncHTTPTransport(
+        limits=Limits(
+            max_connections=200,
+            max_keepalive_connections=50,
+            keepalive_expiry=None,
+        ),
+    )
+    app.state.httpx_client = AsyncClient(
+        timeout=Timeout(10.0, connect=5.0),
+        follow_redirects=False,
+        transport=app.state.async_transport,
+    )
 
 
 @app.post('/reportIssue')
@@ -268,6 +280,72 @@ async def ping(
         content={'message': 'Ping Successful!'},
     )
     
+@app.get('/activity/{address}/{slot_id}')
+async def return_activity_state(
+    request: Request,
+    address: str,
+    slot_id: int,
+    response: Response,
+    rate_limit_auth_dep: RateLimitAuthCheck = Depends(
+        rate_limit_auth_check,
+        ),
+):
+    if not (
+        rate_limit_auth_dep.rate_limit_passed and
+        rate_limit_auth_dep.authorized and
+        rate_limit_auth_dep.owner.active == UserStatusEnum.active
+    ):
+        return inject_rate_limit_fail_response(rate_limit_auth_dep)
+    
+    try:
+        address = Web3.to_checksum_address(address)
+    except ValueError:
+        return JSONResponse(status_code=400, content={'message': 'Invalid instanceID.'})
+    
+    key = 'lastPing:' + address + ':' + str(slot_id)
+    lastPing = await request.app.state.writer_redis_pool.get(
+        key
+    )
+    if lastPing is not None:
+        lastPing = int(lastPing.decode('utf-8'))
+    else:
+        lastPing = 0
+    time = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    if time - lastPing > 60:
+        intermediate_activity_status = False
+    else:
+        intermediate_activity_status = True
+    # call the sequencer API to get the activity status
+    total_rewards_response_obj = await request.app.state.httpx_client.post(
+        url=settings.sequencer_url,
+        json={
+            'slot_id': slot_id,
+            'token': settings.sequencer_query_token,
+        },
+    )
+    service_logger.debug('Response from sequencer API for total rewards for slot {}: {}', slot_id, total_rewards_response_obj.text)
+    try:
+        total_rewards_response = total_rewards_response_obj.json()
+    except json.JSONDecodeError:
+        service_logger.error('Error decoding response from sequencer API into dict object: {}', total_rewards_response_obj.text)
+        return JSONResponse(status_code=500, content={'message': 'Internal Server Error.'})
+    try:
+        total_rewards_response_parse = SequencerTotalRewardsResponse.parse_obj(total_rewards_response)
+    except ValueError:
+        service_logger.error('Error parsing response from sequencer API for total rewards for slot {}: {}', slot_id, total_rewards_response)
+        return JSONResponse(status_code=500, content={'message': 'Internal Server Error.'})
+    if total_rewards_response_parse.info.response > 0:
+        rewards_status = True
+    else:
+        rewards_status = False
+    return JSONResponse(status_code=200, content={
+        'overallActivity': intermediate_activity_status and rewards_status,
+        'pingActivity': intermediate_activity_status,
+        'rewardsActivity': rewards_status,
+    }
+    )
+
+
 
 @app.get('/lastPing/{address}/{slot_id}')
 async def get_last_ping(

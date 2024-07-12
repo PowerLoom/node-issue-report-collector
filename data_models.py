@@ -102,6 +102,8 @@ class SettingsConf(BaseModel):
     redis: RedisConfig
     rate_limit: str
     rlimit: RLimit
+    sequencer_url: str
+    sequencer_query_token: str
 
 
 
@@ -166,3 +168,11 @@ class SnapshotterIdentifier(BaseModel):
 
 class AccountIdentifier(BaseModel):
     accountAddress: str
+
+class SequencerTotalRewardsInfoResponse(BaseModel):
+    success: bool
+    response: int
+
+class SequencerTotalRewardsResponse(BaseModel):
+    info: SequencerTotalRewardsInfoResponse
+    request_id: str

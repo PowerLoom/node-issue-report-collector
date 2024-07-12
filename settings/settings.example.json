@@ -16,5 +16,7 @@
 	},
 	"rlimit": {
 		"file_descriptors": 2048
-	}
+	},
+	"sequencer_url": "http://localhost:9988",
+	"sequencer_query_token": "token"
 }
