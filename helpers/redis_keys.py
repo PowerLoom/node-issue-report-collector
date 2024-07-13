@@ -15,6 +15,9 @@ def get_generic_txn_issues_reported_key(account_address):
 
 # sorted set
 
+def get_cached_pings_set(instance_id):
+    return f'instance:{instance_id}:cachedPings'
+
 
 def get_snapshotters_status_zset():
     return 'SnapshotterStatus'

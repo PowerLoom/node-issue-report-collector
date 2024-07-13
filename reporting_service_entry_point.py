@@ -33,7 +33,7 @@ from data_models import SnapshotterIdentifier
 from data_models import SnapshotterIssue
 from data_models import SnapshotterPing
 from data_models import SnapshotterPingResponse
-from helpers.redis_keys import get_generic_txn_issues_reported_key
+from helpers.redis_keys import get_cached_pings_set, get_generic_txn_issues_reported_key
 from helpers.redis_keys import get_snapshotter_issues_reported_key
 from helpers.redis_keys import get_snapshotters_status_zset
 from settings.conf import settings
@@ -186,7 +186,7 @@ async def report_issue(
         get_snapshotter_issues_reported_key(
             snapshotter_id=req_parsed.instanceID,
         ), 0,
-        int(time.time()) - (7 * 24 * 60 * 60),
+        int(time.time()) - (2 * 24 * 60 * 60),
     )
 
     return JSONResponse(status_code=200, content={'message': 'Reported Issue.'})
@@ -279,6 +279,71 @@ async def ping(
         status_code=200,
         content={'message': 'Ping Successful!'},
     )
+
+@app.get('/pingActivity/{address}/{slot_id}')
+async def return_ping_activity_state(
+    request: Request,
+    address: str,
+    slot_id: int,
+    response: Response,
+    rate_limit_auth_dep: RateLimitAuthCheck = Depends(
+        rate_limit_auth_check,
+        ),
+):
+    if not (
+        rate_limit_auth_dep.rate_limit_passed and
+        rate_limit_auth_dep.authorized and
+        rate_limit_auth_dep.owner.active == UserStatusEnum.active
+    ):
+        return inject_rate_limit_fail_response(rate_limit_auth_dep)
+    
+    try:
+        address = Web3.to_checksum_address(address)
+    except ValueError:
+        return JSONResponse(status_code=400, content={'message': 'Invalid instanceID.'})
+    
+    key = 'lastPing:' + address + ':' + str(slot_id)
+    # get last 20 pings
+    # check if cached pings exist
+    cache_ = await request.app.state.writer_redis_pool.get(
+        get_cached_pings_set(address)
+    )
+    if cache_:
+        service_logger.debug('Using cached pings: {}', cache_)
+        timestamps = json.loads(cache_.decode())
+        lastPing = timestamps[-1]
+    else:
+        ping_zset = await request.app.state.writer_redis_pool.zrange(
+            name=get_snapshotters_status_zset(),
+            start=0,
+            end=-1,
+            withscores=True,
+        )
+        timestamps = [int(x[1]) for x in ping_zset if x[0].decode().startswith(address.encode())]
+        # filter latest 20 pings
+        timestamps_last_20 = sorted(timestamps, reverse=True)[:20]
+        service_logger.debug('Filtered pings from live zset for address {}: {}', address, timestamps_last_20)
+        if timestamps:
+            lastPing = timestamps[-1]
+            # cache the last 20 pings
+            await request.app.state.writer_redis_pool.set(
+                get_cached_pings_set(address),
+                json.dumps(timestamps_last_20),
+                ex=60,
+            )
+        lastPing = await request.app.state.writer_redis_pool.get(
+            key
+        )
+        if lastPing is not None:
+            lastPing = int(lastPing.decode('utf-8'))
+        else:
+            lastPing = 0
+    time = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    if time - lastPing > settings.ping_activity_threshold:
+        intermediate_activity_status = False
+    else:
+        intermediate_activity_status = True
+    return JSONResponse(status_code=200, content={'pingActivity': intermediate_activity_status, 'lastPings': timestamps})
     
 @app.get('/activity/{address}/{slot_id}')
 async def return_activity_state(
