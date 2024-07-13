@@ -3,6 +3,7 @@ import datetime
 import json
 import time
 import uuid
+import numpy as np
 from functools import wraps
 from typing import Any
 from typing import Dict
@@ -343,7 +344,7 @@ async def return_ping_activity_state(
         intermediate_activity_status = False
     else:
         intermediate_activity_status = True
-    return JSONResponse(status_code=200, content={'pingActivity': intermediate_activity_status, 'lastPings': timestamps})
+    return JSONResponse(status_code=200, content={'pingActivity': intermediate_activity_status, 'lastPings': timestamps, 'pingDeviation': np.std(timestamps)})
     
 @app.get('/activity/{address}/{slot_id}')
 async def return_activity_state(
