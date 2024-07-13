@@ -319,7 +319,7 @@ async def return_ping_activity_state(
             end=-1,
             withscores=True,
         )
-        timestamps = [int(x[1]) for x in ping_zset if x[0].decode().startswith(address.encode())]
+        timestamps = [int(x[1]) for x in ping_zset if x[0].decode().startswith(address)]
         # filter latest 20 pings
         timestamps_last_20 = sorted(timestamps, reverse=True)[:20]
         service_logger.debug('Filtered pings from live zset for address {}: {}', address, timestamps_last_20)
