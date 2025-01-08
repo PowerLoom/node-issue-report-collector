@@ -129,7 +129,9 @@ class SnapshotterIssue(BaseModel):
 class SnapshotterPing(BaseModel):
     instanceID: str
     slotId: int
-
+    nodeVersion: str
+    dataMarketAddress: str
+    namespace: str
 
 class SnapshotterPingResponse(BaseModel):
     instanceID: str

@@ -274,6 +274,10 @@ async def ping(
     await request.app.state.writer_redis_pool.set(
         'lastPing:' + req_parsed.instanceID + ':' + str(req_parsed.slotId), time
     )
+    # TODO: to be segregated later by data market address and namespace
+    await request.app.state.writer_redis_pool.set(
+        'nodeVersion:' + req_parsed.instanceID + ':' + str(req_parsed.slotId), req_parsed.nodeVersion
+    )
 
     return JSONResponse(
         status_code=200,
@@ -343,7 +347,15 @@ async def return_ping_activity_state(
         intermediate_activity_status = False
     else:
         intermediate_activity_status = True
-    return JSONResponse(status_code=200, content={'pingActivity': intermediate_activity_status, 'lastPings': timestamps})
+    # get last known node version
+    node_version = await request.app.state.writer_redis_pool.get(
+        'nodeVersion:' + address + ':' + str(slot_id)
+    )
+    if node_version is not None:
+        node_version = node_version.decode('utf-8')
+    else:
+        node_version = 'unknown'
+    return JSONResponse(status_code=200, content={'pingActivity': intermediate_activity_status, 'lastPings': timestamps, 'nodeVersion': node_version})
     
 @app.get('/activity/{address}/{slot_id}')
 async def return_activity_state(
