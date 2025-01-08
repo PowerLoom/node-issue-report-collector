@@ -274,11 +274,12 @@ async def ping(
     await request.app.state.writer_redis_pool.set(
         'lastPing:' + req_parsed.instanceID + ':' + str(req_parsed.slotId), time
     )
+    service_logger.debug('Setting last ping for instanceID: {} and slotId: {} to {}', req_parsed.instanceID, req_parsed.slotId, time)
     # TODO: to be segregated later by data market address and namespace
     await request.app.state.writer_redis_pool.set(
         'nodeVersion:' + req_parsed.instanceID + ':' + str(req_parsed.slotId), req_parsed.nodeVersion
     )
-
+    service_logger.debug('Setting node version for instanceID: {} and slotId: {} to {}', req_parsed.instanceID, req_parsed.slotId, req_parsed.nodeVersion)
     return JSONResponse(
         status_code=200,
         content={'message': 'Ping Successful!'},
@@ -447,6 +448,7 @@ async def get_last_ping(
         return JSONResponse(status_code=400, content={'message': 'Invalid instanceID.'})
     
     key = 'lastPing:' + address + ':' + str(slot_id)
+    service_logger.debug('Getting last ping for instanceID: {} and slotId: {} with key: {}', address, slot_id, key)
     lastPing = await request.app.state.writer_redis_pool.get(
         key
     )
