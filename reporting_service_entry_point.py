@@ -101,7 +101,6 @@ async def request_middleware(request: Request, call_next: Any) -> Optional[Dict]
     request.state.request_id = request_id
 
     with service_logger.contextualize(request_id=request_id):
-        service_logger.info('Request started for: {}', request.url)
         try:
             response = await call_next(request)
 
@@ -120,8 +119,11 @@ async def request_middleware(request: Request, call_next: Any) -> Optional[Dict]
             )
 
         finally:
+            if response.status_code != 200:
+                service_logger.error('Request failed for: {} with request body: {} | Sending response: {}', request.url, request.body, response.body)
+            else:
+                service_logger.info('Request ended for: {} with request body: {} | Sending response: {}', request.url, request.body, response.body)
             response.headers['X-Request-ID'] = request_id
-            service_logger.info('Request ended')
             return response
 
 
@@ -136,8 +138,8 @@ async def startup_boilerplate():
     app.state.snapshotter_aliases = dict()
     app.state.async_transport = AsyncHTTPTransport(
         limits=Limits(
-            max_connections=200,
-            max_keepalive_connections=50,
+            max_connections=20000,
+            max_keepalive_connections=5000,
             keepalive_expiry=None,
         ),
     )
@@ -261,7 +263,7 @@ async def ping(
         req_parsed.instanceID = Web3.to_checksum_address(req_parsed.instanceID)
     except ValueError:
         return JSONResponse(status_code=400, content={'message': 'Invalid instanceID.'})
-
+    service_logger.debug('Ping request received for instanceID: {} and slotId: {}', req_parsed.instanceID, req_parsed.slotId)
     # add/update instanceID to zset with current time as ping time
 
     time = int(datetime.datetime.now(datetime.timezone.utc).timestamp())

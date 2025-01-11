@@ -1,0 +1,26 @@
+services:
+  reporting:
+    image: powerloom-onchain-consensus
+    ports:
+      - 9030:9030
+    depends_on:
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./logs:/logs
+  redis:
+    command: redis-server --appendonly yes --port 6379
+    image: "redis:alpine"
+    expose:
+      - 6379
+    ports:
+      - 6379:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: on-failure
