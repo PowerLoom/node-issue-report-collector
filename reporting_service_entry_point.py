@@ -120,9 +120,9 @@ async def request_middleware(request: Request, call_next: Any) -> Optional[Dict]
 
         finally:
             if response.status_code != 200:
-                service_logger.error('Request failed for: {} with request body: {} | Sending response: {}', request.url, request.body, response.body)
+                service_logger.error('Request failed for: {} with request body: {}', request.url, request.body)
             else:
-                service_logger.info('Request ended for: {} with request body: {} | Sending response: {}', request.url, request.body, response.body)
+                service_logger.info('Request ended for: {} with request body: {}', request.url, request.body)
             response.headers['X-Request-ID'] = request_id
             return response
 
