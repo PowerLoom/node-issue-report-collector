@@ -467,7 +467,7 @@ async def get_last_ping(
     if node_version is not None:
         node_version = node_version.decode('utf-8')
     else:
-        node_version = 'unknown'
+        node_version = ''
 
     return JSONResponse(status_code=200, content={'lastPing': lastPing, 'nodeVersion': node_version})
 
