@@ -454,11 +454,22 @@ async def get_last_ping(
     lastPing = await request.app.state.writer_redis_pool.get(
         key
     )
+
     if lastPing is not None:
         lastPing = int(lastPing.decode('utf-8'))
     else:
         lastPing = 0
-    return JSONResponse(status_code=200, content={'lastPing': lastPing})
+
+    node_version_key = 'nodeVersion:' + address + ':' + str(slot_id)
+    node_version = await request.app.state.writer_redis_pool.get(
+        node_version_key
+    )
+    if node_version is not None:
+        node_version = node_version.decode('utf-8')
+    else:
+        node_version = 'unknown'
+
+    return JSONResponse(status_code=200, content={'lastPing': lastPing, 'nodeVersion': node_version})
 
 
 
